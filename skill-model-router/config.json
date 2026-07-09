@@ -1,0 +1,12 @@
+{
+  "toast": {
+    "enabled": true,
+    "duration": 5000
+  },
+  "healthcheck": {
+    "timeout": 2
+  },
+  "generation": {
+    "timeout": 120
+  }
+}
