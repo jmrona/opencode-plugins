@@ -1,12 +1,15 @@
 {
-  "toast": {
-    "enabled": true,
-    "duration": 5000
-  },
-  "healthcheck": {
-    "timeout": 2
-  },
-  "generation": {
-    "timeout": 120
-  }
+	"toast": {
+		"enabled": true,
+		"duration": 5000
+	},
+	"healthcheck": {
+		"timeout": 1
+	},
+	"generation": {
+		"timeout": 0
+	},
+	"display": {
+		"hidePrompt": true
+	}
 }

@@ -27,18 +27,28 @@ export type RouterConfig = {
      *  and switching to fallback_model. 0 disables the limit. */
     timeout: number
   }
+  display: {
+    /** Replace the `prompt` argument with a `model` argument in the recorded
+     *  tool call, so the TUI's generic header reads
+     *  `skill_explain [model=openai/gpt-5.6-luna]` instead of dumping the
+     *  whole prompt. The prompt itself is preserved (child session + tool
+     *  part metadata). Set false to restore the raw prompt in the header. */
+    hidePrompt: boolean
+  }
 }
 
 export const DEFAULT_CONFIG: RouterConfig = {
   toast: { enabled: true, duration: 5000 },
   healthcheck: { timeout: 2 },
   generation: { timeout: 120 },
+  display: { hidePrompt: true },
 }
 
 type PartialConfig = {
   toast?: Partial<RouterConfig["toast"]>
   healthcheck?: Partial<RouterConfig["healthcheck"]>
   generation?: Partial<RouterConfig["generation"]>
+  display?: Partial<RouterConfig["display"]>
 }
 
 /** Merge file config and opencode.json plugin options over defaults.
@@ -50,6 +60,7 @@ export function mergeConfig(fileConfig: PartialConfig, options?: PartialConfig):
     toast: { enabled: pick("toast", "enabled"), duration: pick("toast", "duration") },
     healthcheck: { timeout: pick("healthcheck", "timeout") },
     generation: { timeout: pick("generation", "timeout") },
+    display: { hidePrompt: pick("display", "hidePrompt") },
   }
 }
 
@@ -102,6 +113,13 @@ export function isRouted(skill: SkillDef): boolean {
 export function routedModel(skill: SkillDef): string | undefined {
   if (!skill.model || skill.model === "default") return undefined
   return skill.model
+}
+
+/** Value written into the recorded tool call's `model` argument when
+ *  `display.hidePrompt` is on. This is what the TUI's generic renderer paints
+ *  in the header, so it must stay short and single-line. */
+export function displayModel(skill: SkillDef): string {
+  return routedModel(skill) ?? "default (session model)"
 }
 
 /** Tool name registered for a routed skill. */

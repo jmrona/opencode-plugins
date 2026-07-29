@@ -8,3 +8,4 @@
 
 export { SkillModelRouter } from "./skill-model-router"
 export { TempSession } from "./temp-session"
+export { CompactionContext } from "./compaction"

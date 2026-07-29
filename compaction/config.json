@@ -1,0 +1,31 @@
+{
+	"_comment": "Providers are the files whose contents you want to survive compaction. Both below are examples and are disabled, so out of the box this plugin injects nothing — enable one, or write your own. See the README for what each field does.",
+	"maxChars": 6000,
+	"maxCharsPerProvider": 3000,
+	"providers": [
+		{
+			"name": "project notes",
+			"heading": "Project notes",
+			"path": "./NOTES.md",
+			"format": "raw",
+			"enabled": false
+		},
+		{
+			"name": "ticket-coach session",
+			"heading": "Active coaching session",
+			"path": "~/.config/opencode/data/ticket-coach/sessions/*.json",
+			"format": "json",
+			"pick": "newest",
+			"select": ["ticket_id", "ticket_summary", "phases", "current_phase_index", "tasks", "skipped_phases"],
+			"enabled": false
+		}
+	],
+	"_threshold_comment": "Also off by default. Read 'Compacting earlier than opencode would' in the README before enabling it — the right 'at' depends on your model's context window.",
+	"threshold": {
+		"enabled": false,
+		"at": 0.6,
+		"model": null,
+		"cooldownMs": 60000,
+		"toast": true
+	}
+}
