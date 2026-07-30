@@ -340,10 +340,15 @@ The character counts are what each provider produced *before* truncation, so a
 figure well above `maxCharsPerProvider` tells you a block is being cut short —
 something the logs never showed.
 
-`commands/compaction-preview.md` wraps this as `/compaction-preview`. It runs in a
-subtask and relays the table, the summary line and the injected block through
-markers rather than asking the model to describe them: a model told to reproduce a
-table tends to summarise it instead.
+`commands/compaction-preview.md` wraps this as `/compaction-preview`. The script's
+output goes straight into the conversation and the model only adds a short verdict
+on top.
+
+It first ran in a subtask, relaying the tables through markers into an output
+template. That failed twice: the model wrote prose bullets and dropped the tables
+both times. The subtask was buying nothing here — the output is the thing you want
+to see, so keeping it out of the conversation was the wrong trade. Printing it
+directly is deterministic and needs no cooperation.
 
 What neither shows is the summary compaction would actually produce. That is
 written by a model at compaction time from the conversation plus this block, so
