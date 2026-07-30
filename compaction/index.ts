@@ -24,6 +24,7 @@ import {
   contextUsed,
   parseModelRef,
   shouldCompact,
+  triggerFor,
   type Config,
   type Provider,
   type Section,
@@ -107,14 +108,44 @@ function isSection(r: Section | Skip): r is Section {
   return "heading" in r
 }
 
-export const CompactionContext: Plugin = async ({ client }, options) => {
-  let fileConfig: Partial<Config> = {}
-  try {
-    fileConfig = JSON.parse(await readFile(fileURLToPath(new URL("./config.json", import.meta.url)), "utf8"))
-  } catch {
-    // No config.json is fine; the plugin then has no providers and does nothing.
+/**
+ * Config layers, applied in order so each overrides the last:
+ *
+ *   1. config.json next to the plugin — the shipped defaults
+ *   2. ~/.config/opencode/compaction.json — your settings
+ *   3. $OPENCODE_CONFIG_DIR/compaction.json — if you use a custom config dir
+ *   4. .opencode/compaction.json in the project — per-repository settings
+ *   5. plugin options passed in opencode.json
+ *
+ * The project layer is the point of this: a repository can declare the state
+ * files worth rescuing — its own NOTES.md, whatever a project skill writes —
+ * without every developer editing their global config, and without the project
+ * wiping the providers they already had. Providers merge by name rather than
+ * replacing, so a project adds to the list instead of replacing it.
+ */
+async function loadLayers(): Promise<Array<Partial<Config> | undefined>> {
+  const read = async (path: string): Promise<Partial<Config> | undefined> => {
+    try {
+      return JSON.parse(await readFile(path, "utf8"))
+    } catch {
+      // Missing is the normal case for every layer but the first. A malformed one
+      // is reported by the caller, which has the logger.
+      return undefined
+    }
   }
-  const cfg = mergeConfig(fileConfig, options as Partial<Config>)
+  const home = process.env.HOME ?? ""
+  const custom = process.env.OPENCODE_CONFIG_DIR
+  return [
+    await read(fileURLToPath(new URL("./config.json", import.meta.url))),
+    await read(join(home, ".config/opencode/compaction.json")),
+    custom ? await read(join(custom, "compaction.json")) : undefined,
+    await read(join(process.cwd(), ".opencode/compaction.json")),
+  ]
+}
+
+export const CompactionContext: Plugin = async ({ client }, options) => {
+  const layers = await loadLayers()
+  const cfg = mergeConfig(...layers, options as Partial<Config>)
 
   const log = async (message: string, extra?: Record<string, unknown>) => {
     try {
@@ -244,7 +275,7 @@ export const CompactionContext: Plugin = async ({ client }, options) => {
         const decision = shouldCompact({
           used,
           limit,
-          at: cfg.threshold.at,
+          triggerAt: triggerFor(cfg.threshold, usage.providerID, usage.modelID, limit),
           now: Date.now(),
           lastFiredAt: lastFiredAt.get(sessionID),
           cooldownMs: cfg.threshold.cooldownMs,

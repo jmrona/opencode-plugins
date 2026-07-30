@@ -27,11 +27,25 @@ export type Provider = {
   enabled?: boolean
 }
 
+/**
+ * Where to compact, expressed as an absolute token count, a percentage of the
+ * model's context window, or a fraction of it.
+ *
+ * Three forms because one is not enough. A fraction that is safe on a 1M window
+ * is not safe on a 128k one: the floor a session settles at after compacting is
+ * roughly a fixed number of tokens — system prompt, skill descriptions, the
+ * summary — so on a small window that same fraction can sit below the floor and
+ * re-fire forever. An absolute limit sidesteps that entirely.
+ */
+export type Trigger = number | string
+
 export type ThresholdConfig = {
   /** Off by default: firing compaction early is a bigger intervention than injecting text. */
   enabled: boolean
-  /** Fraction of the model's context limit at which to compact, 0–1. */
-  at: number
+  /** Default trigger for any model without an entry in `modelLimits`. */
+  at: Trigger
+  /** Per `provider/model-id` overrides, which win over `at`. */
+  modelLimits: Record<string, Trigger>
   /** `provider/model-id` to run the compaction on. Null uses the session's own model. */
   model: string | null
   /** Ignore further triggers for this long after firing, in ms. */
@@ -55,22 +69,46 @@ export const DEFAULTS: Config = {
   providers: [],
   threshold: {
     enabled: false,
-    at: 0.6,
+    at: "60%",
+    modelLimits: {},
     model: null,
     cooldownMs: 60_000,
     toast: true,
   },
 }
 
-/** defaults < config.json < plugin options, shallow except providers, which replace wholesale. */
+/**
+ * Merges providers by `name`: a later layer replaces an entry of the same name
+ * and appends new ones.
+ *
+ * Replacing the array wholesale would mean a project that wants to add its own
+ * NOTES.md silently loses every global provider, which is the opposite of what
+ * anyone writing a project config intends. Merging by name keeps both, and still
+ * allows a project to switch one off with `enabled: false`.
+ */
+export function mergeProviders(base: Provider[], overlay: Provider[]): Provider[] {
+  const out = [...base]
+  for (const p of overlay) {
+    const i = out.findIndex((x) => x.name === p.name)
+    if (i === -1) out.push(p)
+    else out[i] = { ...out[i], ...p }
+  }
+  return out
+}
+
+/** Layers applied in order, each overriding the last. Providers merge by name. */
 export function mergeConfig(...layers: Array<Partial<Config> | undefined>): Config {
   const out: Config = { ...DEFAULTS, providers: [...DEFAULTS.providers], threshold: { ...DEFAULTS.threshold } }
   for (const layer of layers) {
     if (!layer) continue
     if (typeof layer.maxChars === "number") out.maxChars = layer.maxChars
     if (typeof layer.maxCharsPerProvider === "number") out.maxCharsPerProvider = layer.maxCharsPerProvider
-    if (Array.isArray(layer.providers)) out.providers = layer.providers
-    if (layer.threshold) out.threshold = { ...out.threshold, ...layer.threshold }
+    if (Array.isArray(layer.providers)) out.providers = mergeProviders(out.providers, layer.providers)
+    if (layer.threshold) {
+      const { modelLimits, ...rest } = layer.threshold
+      out.threshold = { ...out.threshold, ...rest }
+      if (modelLimits) out.threshold.modelLimits = { ...out.threshold.modelLimits, ...modelLimits }
+    }
   }
   return out
 }
@@ -109,10 +147,52 @@ export function parseModelRef(ref: string): { providerID: string; modelID: strin
   return { providerID: ref.slice(0, i), modelID: ref.slice(i + 1) }
 }
 
+/**
+ * Turns a trigger into an absolute token count.
+ *
+ *   120000   -> 120000 tokens, whatever the window
+ *   "80%"    -> 80% of the model's context window
+ *   0.8      -> the same, kept so existing fraction configs still work
+ *
+ * A bare number above 1 is absolute and a bare number at or below 1 is a
+ * fraction. That split is the one ambiguity here, and it resolves the way anyone
+ * writing the config would expect: nobody means "compact at 0.8 tokens", and
+ * nobody means "compact at 120000 times the window".
+ *
+ * Returns 0 when it cannot be resolved — an unknown window for a percentage — so
+ * the caller declines rather than compacting at an arbitrary point.
+ */
+export function resolveTrigger(trigger: Trigger | undefined, contextLimit: number): number {
+  if (trigger === undefined || trigger === null) return 0
+  if (typeof trigger === "number") {
+    if (!isFinite(trigger) || trigger <= 0) return 0
+    return trigger > 1 ? Math.floor(trigger) : Math.floor(trigger * contextLimit)
+  }
+  const text = trigger.trim()
+  const pct = text.endsWith("%") ? Number(text.slice(0, -1)) : NaN
+  if (isFinite(pct) && pct > 0) return Math.floor((pct / 100) * contextLimit)
+  const n = Number(text)
+  if (isFinite(n) && n > 0) return n > 1 ? Math.floor(n) : Math.floor(n * contextLimit)
+  return 0
+}
+
+/** The per-model override if there is one, else the default. */
+export function triggerFor(
+  cfg: Pick<ThresholdConfig, "at" | "modelLimits">,
+  providerID: string,
+  modelID: string,
+  contextLimit: number,
+): number {
+  const key = `${providerID}/${modelID}`
+  const override = cfg.modelLimits?.[key]
+  return resolveTrigger(override !== undefined ? override : cfg.at, contextLimit)
+}
+
 export type TriggerInput = {
   used: number
   limit: number
-  at: number
+  /** Absolute token count at which to fire, from `triggerFor`. */
+  triggerAt: number
   now: number
   lastFiredAt?: number
   cooldownMs: number
@@ -137,14 +217,15 @@ export function shouldCompact(input: TriggerInput): TriggerDecision {
   const no = (reason: string): TriggerDecision => ({ fire: false, fraction, reason })
 
   if (input.limit <= 0) return no("context limit unknown for this model")
+  if (input.triggerAt <= 0) return no("no usable threshold configured for this model")
   if (input.isChild) return no("child session")
   if (input.isSummary) return no("message is a compaction summary")
   if (input.pending) return no("a compaction is already running")
   if (input.lastFiredAt !== undefined && input.now - input.lastFiredAt < input.cooldownMs) {
     return no("within cooldown")
   }
-  if (fraction < input.at) return no("below threshold")
-  return { fire: true, fraction, reason: "threshold reached" }
+  if (input.used < input.triggerAt) return no(`below threshold (${input.used}/${input.triggerAt})`)
+  return { fire: true, fraction, reason: `threshold reached (${input.used}/${input.triggerAt})` }
 }
 
 export function expandHome(p: string, home = homedir()): string {

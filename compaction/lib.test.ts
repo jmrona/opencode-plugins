@@ -14,6 +14,9 @@ import {
   contextUsed,
   parseModelRef,
   shouldCompact,
+  resolveTrigger,
+  triggerFor,
+  mergeProviders,
   type TriggerInput,
 } from "./lib.ts"
 
@@ -23,10 +26,39 @@ test("mergeConfig applies defaults < file < options", () => {
   assert.equal(merged.maxCharsPerProvider, DEFAULTS.maxCharsPerProvider)
 })
 
-test("mergeConfig replaces providers wholesale rather than merging them", () => {
-  const a = [{ name: "a", path: "/a" }]
-  const b = [{ name: "b", path: "/b" }]
-  assert.deepEqual(mergeConfig({ providers: a }, { providers: b }).providers, b)
+test("mergeConfig merges providers by name across layers", () => {
+  // A project layer must be able to add a provider without discarding the global
+  // ones, which is what replacing the array would do.
+  const global = [{ name: "notes", path: "/global/notes.md" }]
+  const project = [{ name: "project", path: "./NOTES.md" }]
+  const merged = mergeConfig({ providers: global }, { providers: project }).providers
+  assert.deepEqual(merged.map((p) => p.name), ["notes", "project"])
+})
+
+test("mergeProviders lets a later layer override one entry by name", () => {
+  const merged = mergeProviders(
+    [{ name: "notes", path: "/a", tail: 10 }],
+    [{ name: "notes", path: "/b" }],
+  )
+  assert.equal(merged.length, 1)
+  assert.equal(merged[0].path, "/b")
+  assert.equal(merged[0].tail, 10, "fields not restated are kept")
+})
+
+test("mergeProviders lets a project disable an inherited provider", () => {
+  const merged = mergeProviders(
+    [{ name: "notes", path: "/a" }],
+    [{ name: "notes", path: "/a", enabled: false }],
+  )
+  assert.equal(merged[0].enabled, false)
+})
+
+test("mergeConfig merges modelLimits rather than replacing the map", () => {
+  const merged = mergeConfig(
+    { threshold: { modelLimits: { "openai/a": 100 } } as any },
+    { threshold: { modelLimits: { "openai/b": 200 } } as any },
+  )
+  assert.deepEqual(merged.threshold.modelLimits, { "openai/a": 100, "openai/b": 200 })
 })
 
 test("mergeConfig ignores undefined layers", () => {
@@ -150,7 +182,7 @@ test("parseModelRef keeps multi-slash model ids intact", () => {
 const base: TriggerInput = {
   used: 80_000,
   limit: 100_000,
-  at: 0.6,
+  triggerAt: 60_000,
   now: 1_000_000,
   cooldownMs: 60_000,
   pending: false,
@@ -166,6 +198,12 @@ test("shouldCompact fires once past the threshold", () => {
 
 test("shouldCompact holds below the threshold", () => {
   assert.equal(shouldCompact({ ...base, used: 50_000 }).fire, false)
+})
+
+test("shouldCompact declines when no threshold resolves for the model", () => {
+  const d = shouldCompact({ ...base, triggerAt: 0 })
+  assert.equal(d.fire, false)
+  assert.match(d.reason, /no usable threshold/)
 })
 
 test("shouldCompact never fires on child sessions", () => {
@@ -199,4 +237,52 @@ test("shouldCompact refuses when the context limit is unknown", () => {
 test("shouldCompact reports the fraction even when it declines", () => {
   const d = shouldCompact({ ...base, used: 30_000, limit: 100_000 })
   assert.equal(d.fraction, 0.3)
+})
+
+// --- trigger resolution ----------------------------------------------------
+
+test("resolveTrigger reads percentages", () => {
+  assert.equal(resolveTrigger("80%", 100_000), 80_000)
+  assert.equal(resolveTrigger("12.5%", 100_000), 12_500)
+})
+
+test("resolveTrigger treats a number above one as absolute tokens", () => {
+  // The whole point of the absolute form: independent of window size.
+  assert.equal(resolveTrigger(120_000, 1_000_000), 120_000)
+  assert.equal(resolveTrigger(120_000, 128_000), 120_000)
+})
+
+test("resolveTrigger treats a number at or below one as a fraction", () => {
+  assert.equal(resolveTrigger(0.2, 1_000_000), 200_000)
+  assert.equal(resolveTrigger(1, 128_000), 128_000)
+})
+
+test("resolveTrigger returns zero for anything unusable", () => {
+  for (const v of [undefined, 0, -5, "", "abc", "0%", "-10%"] as any[]) {
+    assert.equal(resolveTrigger(v, 100_000), 0, `expected 0 for ${JSON.stringify(v)}`)
+  }
+})
+
+test("triggerFor prefers a per-model limit over the default", () => {
+  const cfg = { at: "60%", modelLimits: { "openai/small": 20_000 } }
+  assert.equal(triggerFor(cfg, "openai", "small", 128_000), 20_000)
+  assert.equal(triggerFor(cfg, "openai", "large", 1_000_000), 600_000)
+})
+
+test("triggerFor matches on the full provider/model key", () => {
+  // Multi-slash model ids are normal (llama.cpp/qwen/qwen3.6-35b-a3b), so the key
+  // is everything after the provider, not just the first segment.
+  const cfg = { at: "50%", modelLimits: { "llama.cpp/qwen/qwen3.6-35b-a3b": 30_000 } }
+  assert.equal(triggerFor(cfg, "llama.cpp", "qwen/qwen3.6-35b-a3b", 262_144), 30_000)
+})
+
+test("a fraction safe on a wide window is unsafe on a narrow one, which absolutes fix", () => {
+  // The bug this feature exists for: ~11k tokens of floor after compacting.
+  const floor = 11_000
+  const fraction = { at: 0.05, modelLimits: {} }
+  assert.ok(triggerFor(fraction, "o", "wide", 1_050_000) > floor, "fine on a wide window")
+  assert.ok(triggerFor(fraction, "o", "narrow", 128_000) < floor, "loops on a narrow one")
+
+  const absolute = { at: 0.05, modelLimits: { "o/narrow": 40_000 } }
+  assert.ok(triggerFor(absolute, "o", "narrow", 128_000) > floor, "per-model limit fixes it")
 })

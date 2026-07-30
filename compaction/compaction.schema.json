@@ -1,0 +1,135 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://raw.githubusercontent.com/jmrona/opencode-plugins/main/compaction/compaction.schema.json",
+	"title": "opencode-compaction configuration",
+	"type": "object",
+	"additionalProperties": false,
+	"properties": {
+		"$schema": { "type": "string" },
+		"_comment": { "type": "string", "description": "Free-text note. Ignored." },
+		"_threshold_comment": { "type": "string", "description": "Free-text note. Ignored." },
+		"maxChars": {
+			"type": "integer",
+			"minimum": 1,
+			"default": 6000,
+			"description": "Hard cap on the injected text across all providers. Exists because compaction is meant to shrink context: pasting a large block into the compaction prompt works against the thing it was called to do."
+		},
+		"maxCharsPerProvider": {
+			"type": "integer",
+			"minimum": 1,
+			"default": 3000,
+			"description": "Cap on a single provider's block, applied before the global one."
+		},
+		"providers": {
+			"type": "array",
+			"description": "Files whose contents should survive compaction. Nothing is enabled by default.",
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": ["name", "path"],
+				"properties": {
+					"name": {
+						"type": "string",
+						"description": "Identifies this provider. Layers merge by name, so a project config can override or disable an entry inherited from the global one."
+					},
+					"path": {
+						"type": "string",
+						"description": "File to read. ~ and $HOME expand. A * in the final segment is matched against the directory."
+					},
+					"format": {
+						"enum": ["raw", "json", "jsonl"],
+						"default": "raw",
+						"description": "How to turn the file into text."
+					},
+					"select": {
+						"type": "array",
+						"items": { "type": "string" },
+						"description": "json only. Top-level keys to keep. Naming them keeps the injection to the state that matters, and keeps out anything the file holds that should not reach a summary."
+					},
+					"tail": {
+						"type": "integer",
+						"minimum": 1,
+						"default": 10,
+						"description": "jsonl only. How many trailing lines to keep."
+					},
+					"pick": {
+						"enum": ["newest", "all"],
+						"default": "newest",
+						"description": "Which file to use when a glob matches several."
+					},
+					"heading": {
+						"type": "string",
+						"description": "Markdown heading above this block. Defaults to name."
+					},
+					"enabled": {
+						"type": "boolean",
+						"default": true,
+						"description": "Set false to keep an entry configured but inactive."
+					}
+				}
+			}
+		},
+		"threshold": {
+			"type": "object",
+			"additionalProperties": false,
+			"description": "Compact before opencode would, on a threshold you choose.",
+			"properties": {
+				"enabled": {
+					"type": "boolean",
+					"default": false,
+					"description": "Off by default. Triggering compaction is a real intervention, unlike appending text to a prompt."
+				},
+				"at": {
+					"$ref": "#/definitions/trigger",
+					"default": "60%",
+					"description": "Default trigger for models with no entry in modelLimits."
+				},
+				"modelLimits": {
+					"type": "object",
+					"description": "Per provider/model-id overrides, which win over `at`. Use these when you switch between models with very different context windows: a fraction that is safe on a wide window can sit below the floor a session settles at after compacting on a narrow one, and re-fire indefinitely.",
+					"additionalProperties": { "$ref": "#/definitions/trigger" },
+					"examples": [{ "openai/gpt-5.6": "50%", "llama.cpp/qwen/qwen3.6-35b-a3b": 40000 }]
+				},
+				"model": {
+					"type": ["string", "null"],
+					"default": null,
+					"description": "provider/model-id to run the compaction on. null uses the session's model. Summarising is mechanical work, so a cheaper model usually does it fine.",
+					"examples": ["openai/gpt-5.4", null]
+				},
+				"cooldownMs": {
+					"type": "integer",
+					"minimum": 0,
+					"default": 60000,
+					"description": "Minimum gap between triggers for one session."
+				},
+				"toast": {
+					"type": "boolean",
+					"default": true,
+					"description": "Show a TUI toast when it fires."
+				}
+			}
+		}
+	},
+	"definitions": {
+		"trigger": {
+			"oneOf": [
+				{
+					"type": "string",
+					"pattern": "^[0-9]+(\\.[0-9]+)?%$",
+					"description": "Percentage of the model's context window, e.g. \"60%\"."
+				},
+				{
+					"type": "number",
+					"exclusiveMinimum": 1,
+					"description": "Absolute token count, e.g. 120000. Independent of window size."
+				},
+				{
+					"type": "number",
+					"exclusiveMinimum": 0,
+					"maximum": 1,
+					"description": "Fraction of the window, e.g. 0.6. Equivalent to the percentage form."
+				}
+			]
+		}
+	}
+}

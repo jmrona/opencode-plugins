@@ -1,4 +1,13 @@
-# compaction
+# opencode-compaction
+
+> [!IMPORTANT]
+> **Moved to [jmrona/opencode-plugins](https://github.com/jmrona/opencode-plugins/tree/main/compaction).**
+>
+> This plugin now lives alongside the others in one repository, which is what lets
+> them share the `plugins/index.ts` barrel opencode requires — installing several
+> from separate repositories meant editing that file by hand every time.
+>
+> This repository is no longer updated. The version here is behind.
 
 **Keep state alive across compaction in [opencode](https://opencode.ai).** When a long session gets compacted, this plugin appends the state that lives *outside* the conversation — a task list on disk, notes about how you work, the phase an agent is halfway through — to the compaction prompt, so the summary keeps it.
 
@@ -128,7 +137,8 @@ sooner, which is the [most](https://github.com/anomalyco/opencode/issues/8140)
 ```json
 "threshold": {
   "enabled": false,
-  "at": 0.6,
+  "at": "60%",
+  "modelLimits": {},
   "model": null,
   "cooldownMs": 60000,
   "toast": true
@@ -138,10 +148,40 @@ sooner, which is the [most](https://github.com/anomalyco/opencode/issues/8140)
 | Field | Purpose |
 |---|---|
 | `enabled` | Off by default. Triggering compaction is a real intervention, unlike appending text to a prompt. |
-| `at` | Fraction of the model's context limit at which to compact. |
+| `at` | Where to compact. Absolute tokens (`120000`), a percentage (`"60%"`), or a fraction (`0.6`). |
+| `modelLimits` | Per `provider/model-id` overrides, which win over `at`. |
 | `model` | `provider/model-id` to run the compaction on. `null` uses the session's model. Summarising is mechanical work; a cheaper model usually does it fine. |
 | `cooldownMs` | Minimum gap between triggers for one session. |
 | `toast` | Show a TUI toast when it fires. |
+
+### Why a fraction is not always enough
+
+After compacting, a session does not drop to nothing: the system prompt, your
+rules, every skill description and the summary itself all remain. That floor is
+roughly a **fixed number of tokens** — around 11k in one measured setup — which
+means the same fraction behaves very differently by window:
+
+| Window | 11k floor is | `at: 0.05` |
+|---|---|---|
+| 1,050,000 | 1% | fine |
+| 200,000 | 5.5% | marginal |
+| 128,000 | 8.6% | below the floor — compacts, lands above the threshold again, repeats |
+
+Absolute limits sidestep this, and `modelLimits` lets you mix:
+
+```json
+"threshold": {
+  "at": "60%",
+  "modelLimits": {
+    "openai/gpt-5.6-terra-pro": 300000,
+    "llama.cpp/qwen/qwen3.6-35b-a3b": 40000
+  }
+}
+```
+
+When a threshold cannot be resolved — a percentage of an unknown window — nothing
+fires, on the same principle as an unknown context limit: compacting at a guessed
+point is worse than not compacting.
 
 It acts on `session.idle`, never mid-turn. An assistant message completing does
 not mean the agent has finished: it may be partway through a tool-call loop, and
@@ -202,15 +242,64 @@ that information cannot have come from the transcript.
 
 ## Install
 
-See [the repository README](../README.md) for the shared install steps: copy this
-folder plus `index.ts` into your opencode `plugins/` directory, and make sure
-`@opencode-ai/plugin` is in your config directory's `package.json`.
+opencode only auto-discovers plugins at `plugins/*.ts`, top level only. Copy this repository into your opencode config directory as a folder under `plugins/`:
 
-Then edit `config.json` to point at your own state files, and restart opencode.
+```sh
+git clone https://github.com/jmrona/opencode-compaction.git \
+  ~/.config/opencode/plugins/compaction
+```
 
-`config.json` is yours once installed. Updating the plugin means pulling the code,
-not overwriting that file — the version in this repository ships with everything
+Then export it from the barrel, creating that file if you do not have one:
+
+```ts
+// ~/.config/opencode/plugins/index.ts
+export { CompactionContext } from "./compaction"
+```
+
+opencode instantiates every exported function in that file as a plugin, so export only plugin functions from it.
+
+Requires `@opencode-ai/plugin` in your config directory's `package.json`; opencode runs `bun install` at startup.
+
+Edit `config.json` to point at your own state files, and restart opencode.
+
+### Where configuration lives
+
+Layers, each overriding the last:
+
+1. `config.json` next to the plugin — the shipped defaults
+2. `~/.config/opencode/compaction.json` — your settings
+3. `$OPENCODE_CONFIG_DIR/compaction.json` — if you use a custom config directory
+4. `.opencode/compaction.json` in the project — per-repository settings
+5. plugin options in `opencode.json`
+
+**Providers merge by `name` rather than replacing the list.** A repository can
+declare the state worth rescuing — its own `NOTES.md`, whatever a project skill
+writes — without every developer editing their global config, and without wiping
+the providers they already had. Restating a name overrides that entry; setting
+`enabled: false` on it switches an inherited provider off for that project.
+
+Config files carry a `$schema` reference, so an editor with JSON schema support
+will autocomplete the fields and flag a typo. That matters more than it sounds:
+a misspelled key is silently ignored today, which means a threshold you believe
+you changed is quietly still at its default.
+
+Everything you set is yours. Updating the plugin means pulling the code, not
+overwriting those files — the version in this repository ships with everything
 disabled precisely so it is never the interesting one.
+
+### Checking a configuration
+
+`preview.ts` runs the injection without a compaction and prints exactly what would
+go in, along with any provider that was skipped and why:
+
+```sh
+node --experimental-strip-types ~/.config/opencode/plugins/compaction/preview.ts
+```
+
+`commands/compaction-preview.md` wraps that as `/compaction-preview` if you would
+rather stay in opencode. Either way it answers the questions that otherwise need a
+restart and a forced compaction to answer: does this glob resolve, is `select`
+keeping what I meant, how many characters is this costing.
 
 ## Development
 
