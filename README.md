@@ -5,7 +5,7 @@ Local plugins for [opencode](https://opencode.ai), built to fill gaps the core d
 | Plugin | What it adds |
 |---|---|
 | [`skill-model-router`](./skill-model-router/) | **Model per skill**, in the style of Claude Code's `model:` skill frontmatter: run a skill on a cheap local model with cloud fallback, per-skill reasoning effort, skill preloading, and health checks. |
-| [`compaction`](./compaction/) | **State that survives compaction**, plus the two knobs opencode does not expose: injects on-disk state (task lists, notes, whatever a skill tracks) into the compaction prompt, and optionally compacts at your own threshold, on a model of your choosing. |
+| [`compaction`](./compaction/) | **State that survives compaction**, plus the two knobs opencode does not expose: injects on-disk state (task lists, notes, whatever a skill tracks) into the compaction prompt, and optionally compacts at your own threshold — per model, absolute or percentage — on a model of your choosing. Ships a `/compaction-preview` command and a config schema. |
 | [`temp-session`](./temp-session/) | A `/temp-session` command for **throwaway sessions**: title-flagged, hidden from `/sessions` where supported, and deleted on the next start. |
 
 Each plugin folder has its own README with full documentation, configuration reference, and known limitations.
