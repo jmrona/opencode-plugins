@@ -83,7 +83,7 @@ type Skip = { skipped: string; path?: string }
  * looks identical to "there was nothing to inject". So every skip carries a
  * reason and gets logged.
  */
-async function readProvider(provider: Provider): Promise<Section | Skip> {
+export async function readProvider(provider: Provider): Promise<Section | Skip> {
   if (provider.enabled === false) return { skipped: "disabled in config" }
   const path = await resolvePath(provider)
   if (path === MISSING_DIR) return { skipped: "directory does not exist — check the path", path: provider.path }
@@ -104,9 +104,15 @@ async function readProvider(provider: Provider): Promise<Section | Skip> {
   return { heading: provider.heading ?? provider.name, body }
 }
 
-function isSection(r: Section | Skip): r is Section {
+export function isSection(r: Section | Skip): r is Section {
   return "heading" in r
 }
+
+// readProvider, isSection and loadLayers are exported for preview.ts, so the dry
+// run reports exactly what the hook does rather than a reimplementation that can
+// drift from it. Extra exports here are harmless: opencode instantiates the
+// exports of the plugins/ barrel, not of this module, and the barrel re-exports
+// only CompactionContext.
 
 /**
  * Config layers, applied in order so each overrides the last:
@@ -123,7 +129,7 @@ function isSection(r: Section | Skip): r is Section {
  * wiping the providers they already had. Providers merge by name rather than
  * replacing, so a project adds to the list instead of replacing it.
  */
-async function loadLayers(): Promise<Array<Partial<Config> | undefined>> {
+export async function loadLayers(): Promise<Array<Partial<Config> | undefined>> {
   const read = async (path: string): Promise<Partial<Config> | undefined> => {
     try {
       return JSON.parse(await readFile(path, "utf8"))

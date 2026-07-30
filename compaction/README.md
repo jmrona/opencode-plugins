@@ -293,13 +293,20 @@ disabled precisely so it is never the interesting one.
 go in, along with any provider that was skipped and why:
 
 ```sh
-node --experimental-strip-types ~/.config/opencode/plugins/compaction/preview.ts
+node --no-warnings --experimental-strip-types ~/.config/opencode/plugins/compaction/preview.ts
 ```
 
-`commands/compaction-preview.md` wraps that as `/compaction-preview` if you would
-rather stay in opencode. Either way it answers the questions that otherwise need a
-restart and a forced compaction to answer: does this glob resolve, is `select`
-keeping what I meant, how many characters is this costing.
+It prints a table of every provider with its status and the characters it
+produced, a one-line summary against the cap, and the text that would be injected.
+The character counts are what each provider produced *before* truncation, so a
+figure well above `maxCharsPerProvider` tells you a block is being cut short —
+something the logs never showed.
+
+`commands/compaction-preview.md` wraps this as `/compaction-preview`. It runs in a
+subtask and relays the table and summary through markers rather than asking the
+model to describe them: a model told to reproduce a table tends to summarise it
+instead. The long injected block is deliberately not relayed; the command reads it
+to form a verdict and reports what it found.
 
 ## Development
 
