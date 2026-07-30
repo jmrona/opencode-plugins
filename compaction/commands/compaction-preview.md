@@ -22,6 +22,10 @@ Nothing before the first line of it, nothing after the last.
 
 [INSERT_SUMMARY_LINE_HERE]
 
+## What would be injected
+
+[INSERT_INJECTED_BLOCK_HERE]
+
 ## Verdict
 
 [YOUR VERDICT]
@@ -33,15 +37,21 @@ Filling the placeholders:
   `<<<END:PROVIDERS>>>`, without the markers.
 - `[INSERT_SUMMARY_LINE_HERE]` → the text between `<<<SUMMARY>>>` and
   `<<<END:SUMMARY>>>`, without the markers.
+- `[INSERT_INJECTED_BLOCK_HERE]` → the text between `<<<INJECTED>>>` and
+  `<<<END:INJECTED>>>`, without the markers, wrapped in a fenced code block.
 - `[YOUR VERDICT]` → three or four lines, no more.
 
 **Treat the text between markers as opaque.** Copy it character for character. Do
 not re-align columns, round numbers, reorder rows or shorten anything.
 
-The block between `<<<INJECTED>>>` and `<<<END:INJECTED>>>` is what would go into
-the compaction prompt. **Do not reproduce it** — it is long, and the point of the
-verdict is to tell the user whether it looks right, not to show it again. Read it
-to form the verdict, then describe what you found.
+The injected block is the whole point of the command: it is what would be appended
+to the compaction prompt, and seeing it is how anyone judges whether the
+configuration is right. Copy it in full, however long it is.
+
+Note what this does **not** show, and say so if asked: the summary compaction
+would actually produce. That is written by a model at compaction time from the
+conversation plus this block, so it cannot be previewed without compacting. What
+is shown here is the part the plugin contributes and you control.
 
 For the verdict, say only what the output supports:
 

@@ -341,10 +341,14 @@ figure well above `maxCharsPerProvider` tells you a block is being cut short —
 something the logs never showed.
 
 `commands/compaction-preview.md` wraps this as `/compaction-preview`. It runs in a
-subtask and relays the table and summary through markers rather than asking the
-model to describe them: a model told to reproduce a table tends to summarise it
-instead. The long injected block is deliberately not relayed; the command reads it
-to form a verdict and reports what it found.
+subtask and relays the table, the summary line and the injected block through
+markers rather than asking the model to describe them: a model told to reproduce a
+table tends to summarise it instead.
+
+What neither shows is the summary compaction would actually produce. That is
+written by a model at compaction time from the conversation plus this block, so
+previewing it would mean compacting. What you can inspect ahead of time is the
+plugin's contribution, which is the part you configure.
 
 ## Development
 
