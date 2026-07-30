@@ -5,9 +5,17 @@
 	"type": "object",
 	"additionalProperties": false,
 	"properties": {
-		"$schema": { "type": "string" },
-		"_comment": { "type": "string", "description": "Free-text note. Ignored." },
-		"_threshold_comment": { "type": "string", "description": "Free-text note. Ignored." },
+		"$schema": {
+			"type": "string"
+		},
+		"_comment": {
+			"type": "string",
+			"description": "Free-text note. Ignored."
+		},
+		"_threshold_comment": {
+			"type": "string",
+			"description": "Free-text note. Ignored."
+		},
 		"maxChars": {
 			"type": "integer",
 			"minimum": 1,
@@ -26,7 +34,10 @@
 			"items": {
 				"type": "object",
 				"additionalProperties": false,
-				"required": ["name", "path"],
+				"required": [
+					"name",
+					"path"
+				],
 				"properties": {
 					"name": {
 						"type": "string",
@@ -37,13 +48,19 @@
 						"description": "File to read. ~ and $HOME expand. A * in the final segment is matched against the directory."
 					},
 					"format": {
-						"enum": ["raw", "json", "jsonl"],
+						"enum": [
+							"raw",
+							"json",
+							"jsonl"
+						],
 						"default": "raw",
 						"description": "How to turn the file into text."
 					},
 					"select": {
 						"type": "array",
-						"items": { "type": "string" },
+						"items": {
+							"type": "string"
+						},
 						"description": "json only. Top-level keys to keep. Naming them keeps the injection to the state that matters, and keeps out anything the file holds that should not reach a summary."
 					},
 					"tail": {
@@ -53,7 +70,10 @@
 						"description": "jsonl only. How many trailing lines to keep."
 					},
 					"pick": {
-						"enum": ["newest", "all"],
+						"enum": [
+							"newest",
+							"all"
+						],
 						"default": "newest",
 						"description": "Which file to use when a glob matches several."
 					},
@@ -65,6 +85,13 @@
 						"type": "boolean",
 						"default": true,
 						"description": "Set false to keep an entry configured but inactive."
+					},
+					"omit": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "json only. Keys removed wherever they appear, at any depth, applied after select. select only reaches the top level, and the weight in a state file is usually nested — a per-item narrative inside an array, say. Measured on one real session file, a single nested key was 91% of the document."
 					}
 				}
 			}
@@ -87,14 +114,27 @@
 				"modelLimits": {
 					"type": "object",
 					"description": "Per provider/model-id overrides, which win over `at`. Use these when you switch between models with very different context windows: a fraction that is safe on a wide window can sit below the floor a session settles at after compacting on a narrow one, and re-fire indefinitely.",
-					"additionalProperties": { "$ref": "#/definitions/trigger" },
-					"examples": [{ "openai/gpt-5.6": "50%", "llama.cpp/qwen/qwen3.6-35b-a3b": 40000 }]
+					"additionalProperties": {
+						"$ref": "#/definitions/trigger"
+					},
+					"examples": [
+						{
+							"openai/gpt-5.6": "50%",
+							"llama.cpp/qwen/qwen3.6-35b-a3b": 40000
+						}
+					]
 				},
 				"model": {
-					"type": ["string", "null"],
+					"type": [
+						"string",
+						"null"
+					],
 					"default": null,
 					"description": "provider/model-id to run the compaction on. null uses the session's model. Summarising is mechanical work, so a cheaper model usually does it fine.",
-					"examples": ["openai/gpt-5.4", null]
+					"examples": [
+						"openai/gpt-5.4",
+						null
+					]
 				},
 				"cooldownMs": {
 					"type": "integer",

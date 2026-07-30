@@ -7,6 +7,7 @@ import {
   splitGlob,
   matchesGlob,
   formatJson,
+  omitKeys,
   formatJsonl,
   formatFile,
   truncate,
@@ -96,6 +97,31 @@ test("formatJson falls back to the whole document when no selected key exists", 
   const doc = { a: 1 }
   const out = formatJson(JSON.stringify(doc), ["nope"])
   assert.deepEqual(JSON.parse(out), doc)
+})
+
+test("omitKeys removes a key at any depth", () => {
+  const doc = { a: 1, tasks: [{ id: 1, progress: ["x"] }, { id: 2, progress: ["y"] }] }
+  assert.deepEqual(omitKeys(doc, ["progress"]), { a: 1, tasks: [{ id: 1 }, { id: 2 }] })
+})
+
+test("omitKeys leaves the document alone when nothing is listed", () => {
+  const doc = { a: 1, b: { c: 2 } }
+  assert.deepEqual(omitKeys(doc, []), doc)
+})
+
+test("omitKeys handles primitives and nulls without throwing", () => {
+  assert.equal(omitKeys(null, ["x"]), null)
+  assert.equal(omitKeys(5, ["x"]), 5)
+  assert.deepEqual(omitKeys([1, null, { x: 1, y: 2 }], ["x"]), [1, null, { y: 2 }])
+})
+
+test("formatJson applies omit after select", () => {
+  // The weight is usually nested, out of select's reach: on a real session file
+  // one nested key was most of the document.
+  const doc = { keep: [{ id: 1, heavy: "x".repeat(100) }], drop: 1 }
+  const out = formatJson(JSON.stringify(doc), ["keep"], ["heavy"])
+  const parsed = JSON.parse(out)
+  assert.deepEqual(parsed, { keep: [{ id: 1 }] })
 })
 
 test("formatJson ignores select for arrays", () => {

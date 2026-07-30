@@ -17,6 +17,8 @@ export type Provider = {
   format?: Format
   /** `json` only: top-level keys to keep. Omit to keep the whole document. */
   select?: string[]
+  /** `json` only: keys removed wherever they appear, at any depth. Applied after `select`. */
+  omit?: string[]
   /** `jsonl` only: how many trailing lines to keep. Defaults to 10. */
   tail?: number
   /** When a glob matches several files, which one to use. Defaults to `newest`. */
@@ -253,10 +255,34 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
-export function formatJson(text: string, select?: string[]): string {
+/**
+ * Removes the named keys wherever they appear, at any depth.
+ *
+ * `select` only reaches the top level, which is not where the weight usually is.
+ * Measured on a real ticket-coach session, `tasks` was 91% of the document and
+ * most of that was a `progress` narrative inside each task — reachable by no
+ * top-level selection, and exactly the kind of history the conversation summary
+ * already covers.
+ */
+export function omitKeys(value: unknown, omit: string[]): unknown {
+  if (!omit.length) return value
+  if (Array.isArray(value)) return value.map((v) => omitKeys(v, omit))
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (omit.includes(k)) continue
+      out[k] = omitKeys(v, omit)
+    }
+    return out
+  }
+  return value
+}
+
+export function formatJson(text: string, select?: string[], omit?: string[]): string {
   const parsed = JSON.parse(text)
+  const strip = (v: unknown) => (omit?.length ? omitKeys(v, omit) : v)
   if (!select?.length || typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return JSON.stringify(parsed, null, 2)
+    return JSON.stringify(strip(parsed), null, 2)
   }
   const picked: Record<string, unknown> = {}
   for (const key of select) {
@@ -265,7 +291,7 @@ export function formatJson(text: string, select?: string[]): string {
   // Selecting nothing that exists is a config mistake, not a reason to inject an
   // empty object — fall back to the whole document so the context is never silently
   // useless.
-  return JSON.stringify(Object.keys(picked).length ? picked : parsed, null, 2)
+  return JSON.stringify(strip(Object.keys(picked).length ? picked : parsed), null, 2)
 }
 
 export function formatJsonl(text: string, tail = 10): string {
@@ -276,7 +302,7 @@ export function formatJsonl(text: string, tail = 10): string {
 export function formatFile(text: string, provider: Provider): string {
   switch (provider.format ?? "raw") {
     case "json":
-      return formatJson(text, provider.select)
+      return formatJson(text, provider.select, provider.omit)
     case "jsonl":
       return formatJsonl(text, provider.tail)
     default:

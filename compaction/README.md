@@ -96,10 +96,18 @@ And an append-only log, where only the recent entries are worth carrying:
 | `path` | File to read. `~` and `$HOME` expand. A `*` in the final segment is matched against the directory. |
 | `format` | `raw` (default), `json`, or `jsonl`. |
 | `select` | `json` only. Top-level keys to keep — the point is to inject the state, not the whole file. |
+| `omit` | `json` only. Keys removed wherever they appear, at any depth, after `select`. |
 | `tail` | `jsonl` only. How many trailing lines to keep. Defaults to 10. |
 | `pick` | `newest` (default) or `all`, when a glob matches several files. |
 | `heading` | Markdown heading above this block. Defaults to `name`. |
 | `enabled` | Set `false` to keep an entry configured but inactive. |
+
+`omit` is what `select` cannot do. `select` only reaches the top level, and the
+weight in a state file is usually deeper: on a real ticket-coach session, `tasks`
+was 91% of the document, and most of that was a `progress` narrative inside each
+task — unreachable by any top-level selection, and exactly the history the
+conversation summary already covers. Dropping it took that provider from 12,910
+characters to 4,680.
 
 `select` is the field that earns its keep. A ticket-coach session file carries a full design plan that is deliberately never shown to the user; injecting it into a compaction prompt would both waste the budget and leak it into the summary. Naming the keys you want keeps the injection to the part that actually needs to survive.
 
