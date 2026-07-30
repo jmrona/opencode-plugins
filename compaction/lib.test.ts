@@ -8,6 +8,7 @@ import {
   matchesGlob,
   formatJson,
   omitKeys,
+  fitJson,
   formatJsonl,
   formatFile,
   truncate,
@@ -136,8 +137,49 @@ test("formatJsonl keeps the trailing lines and drops blanks", () => {
 })
 
 test("formatFile dispatches on format and defaults to raw", () => {
-  assert.equal(formatFile("  hi  ", { name: "x", path: "p" }), "hi")
-  assert.equal(formatFile('{"a":1}', { name: "x", path: "p", format: "json" }), '{\n  "a": 1\n}')
+  assert.equal(formatFile("  hi  ", { name: "x", path: "p" }).body, "hi")
+  assert.equal(formatFile('{"a":1}', { name: "x", path: "p", format: "json" }).body, '{\n  "a": 1\n}')
+})
+
+// --- fitting a json block to a budget --------------------------------------
+
+test("fitJson drops the lowest-priority key first", () => {
+  const doc = { tasks: "t".repeat(200), phases: "p".repeat(200), notes: "n".repeat(200) }
+  const r = fitJson(doc, ["tasks", "phases", "notes"], [], 450)
+  assert.deepEqual(r.dropped, ["notes"])
+  assert.ok("tasks" in JSON.parse(r.text))
+  assert.ok("phases" in JSON.parse(r.text))
+})
+
+test("fitJson never drops a protected key, even when it must overflow", () => {
+  // The failure this exists to prevent: the task list being the thing cut.
+  const doc = { tasks: "t".repeat(500), notes: "n".repeat(500) }
+  const r = fitJson(doc, ["tasks", "notes"], ["tasks"], 100)
+  assert.deepEqual(r.dropped, ["notes"])
+  assert.equal(r.overflowed, true)
+  assert.equal(JSON.parse(r.text).tasks.length, 500, "kept whole rather than sliced")
+})
+
+test("fitJson always leaves valid JSON", () => {
+  // Character truncation of a JSON block leaves a broken object, which is worse
+  // than a smaller valid one: the model reads a fragment it cannot parse.
+  const doc = { a: "x".repeat(300), b: "y".repeat(300), c: "z".repeat(300) }
+  const r = fitJson(doc, ["a", "b", "c"], [], 400)
+  assert.doesNotThrow(() => JSON.parse(r.text))
+})
+
+test("fitJson leaves a document that already fits untouched", () => {
+  const doc = { a: 1, b: 2 }
+  const r = fitJson(doc, ["a", "b"], [], 10_000)
+  assert.deepEqual(r.dropped, [])
+  assert.equal(r.overflowed, false)
+  assert.deepEqual(JSON.parse(r.text), doc)
+})
+
+test("formatFile reports what it had to drop", () => {
+  const doc = JSON.stringify({ tasks: "t".repeat(400), extra: "e".repeat(400) })
+  const out = formatFile(doc, { name: "x", path: "p", format: "json", select: ["tasks", "extra"], keep: ["tasks"] }, 450)
+  assert.match(out.note ?? "", /dropped to fit the budget: extra/)
 })
 
 test("truncate marks the cut instead of hiding it", () => {

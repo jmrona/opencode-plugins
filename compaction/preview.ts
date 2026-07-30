@@ -22,10 +22,10 @@ const rows: Row[] = []
 const sections: Section[] = []
 
 for (const provider of cfg.providers) {
-  const result = await readProvider(provider)
+  const result = await readProvider(provider, cfg.maxCharsPerProvider)
   if (isSection(result)) {
     sections.push(result)
-    rows.push({ name: provider.name, status: "ok", detail: provider.path, chars: result.body.length })
+    rows.push({ name: provider.name, status: result.note ? "fitted" : "ok", detail: result.note ?? provider.path, chars: result.body.length })
   } else {
     rows.push({
       name: provider.name,
@@ -36,7 +36,7 @@ for (const provider of cfg.providers) {
   }
 }
 
-const blocks = buildSections(sections, cfg)
+const blocks = buildSections(sections as any, cfg)
 const injected = blocks.length
   ? [
       [
@@ -59,7 +59,7 @@ console.log("|" + widths.map((w) => "-".repeat(w + 2)).join("|") + "|")
 for (const r of body) console.log(line(r))
 console.log("<<<END:PROVIDERS>>>")
 
-const ok = rows.filter((r) => r.status === "ok").length
+const ok = rows.filter((r) => r.status === "ok" || r.status === "fitted").length
 const truncated = injected.includes("(truncated)")
 const pct = cfg.maxChars ? Math.round((injected.length / cfg.maxChars) * 100) : 0
 console.log("<<<SUMMARY>>>")

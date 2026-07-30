@@ -83,7 +83,7 @@ type Skip = { skipped: string; path?: string }
  * looks identical to "there was nothing to inject". So every skip carries a
  * reason and gets logged.
  */
-export async function readProvider(provider: Provider): Promise<Section | Skip> {
+export async function readProvider(provider: Provider, maxChars?: number): Promise<Section | Skip> {
   if (provider.enabled === false) return { skipped: "disabled in config" }
   const path = await resolvePath(provider)
   if (path === MISSING_DIR) return { skipped: "directory does not exist — check the path", path: provider.path }
@@ -94,14 +94,19 @@ export async function readProvider(provider: Provider): Promise<Section | Skip> 
   } catch (err) {
     return { skipped: `unreadable: ${err instanceof Error ? err.message : String(err)}`, path }
   }
-  let body: string
+  let formatted: { body: string; note?: string }
   try {
-    body = formatFile(raw, provider)
+    formatted = formatFile(raw, provider, provider.format === "json" ? maxChars : undefined)
   } catch (err) {
     return { skipped: `could not parse as ${provider.format ?? "raw"}: ${err instanceof Error ? err.message : String(err)}`, path }
   }
-  if (!body.trim()) return { skipped: "file is empty", path }
-  return { heading: provider.heading ?? provider.name, body }
+  if (!formatted.body.trim()) return { skipped: "file is empty", path }
+  return {
+    heading: provider.heading ?? provider.name,
+    body: formatted.body,
+    note: formatted.note,
+    fitted: provider.format === "json" && maxChars !== undefined,
+  } as Section & { fitted?: boolean }
 }
 
 export function isSection(r: Section | Skip): r is Section {
@@ -382,7 +387,7 @@ export const CompactionContext: Plugin = async ({ client }, options) => {
       try {
         const sections: Section[] = []
         for (const provider of cfg.providers) {
-          const result = await readProvider(provider)
+          const result = await readProvider(provider, cfg.maxCharsPerProvider)
           if (isSection(result)) {
             sections.push(result)
           } else if (result.skipped !== "no file matched" && result.skipped !== "disabled in config") {

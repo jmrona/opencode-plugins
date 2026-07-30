@@ -19,6 +19,12 @@ export type Provider = {
   select?: string[]
   /** `json` only: keys removed wherever they appear, at any depth. Applied after `select`. */
   omit?: string[]
+  /**
+   * `json` only: keys that must never be cut. When the block is over budget,
+   * everything else is dropped whole before these are touched, and if they alone
+   * still exceed the cap they are injected in full anyway.
+   */
+  keep?: string[]
   /** `jsonl` only: how many trailing lines to keep. Defaults to 10. */
   tail?: number
   /** When a glob matches several files, which one to use. Defaults to `newest`. */
@@ -299,14 +305,39 @@ export function formatJsonl(text: string, tail = 10): string {
   return lines.slice(-Math.max(1, tail)).join("\n")
 }
 
-export function formatFile(text: string, provider: Provider): string {
+export type Formatted = { body: string; note?: string }
+
+/**
+ * `maxChars` is passed so a json provider can be fitted structurally rather than
+ * sliced. Only json can: raw text and jsonl have no structure to drop, so those
+ * still fall back to character truncation in buildSections.
+ */
+export function formatFile(text: string, provider: Provider, maxChars?: number): Formatted {
   switch (provider.format ?? "raw") {
-    case "json":
-      return formatJson(text, provider.select, provider.omit)
+    case "json": {
+      const stripped = provider.omit?.length
+        ? (omitKeys(JSON.parse(text), provider.omit) as Record<string, unknown>)
+        : (JSON.parse(text) as Record<string, unknown>)
+      const isPlainObject = stripped && typeof stripped === "object" && !Array.isArray(stripped)
+      const order = provider.select?.length ? provider.select : isPlainObject ? Object.keys(stripped) : []
+      if (!isPlainObject || !order.length) return { body: JSON.stringify(stripped, null, 2) }
+
+      if (maxChars === undefined) {
+        const picked: Record<string, unknown> = {}
+        for (const k of order) if (k in stripped) picked[k] = stripped[k]
+        return { body: JSON.stringify(Object.keys(picked).length ? picked : stripped, null, 2) }
+      }
+
+      const fitted = fitJson(stripped, order, provider.keep ?? [], maxChars)
+      const parts: string[] = []
+      if (fitted.dropped.length) parts.push(`dropped to fit the budget: ${fitted.dropped.join(", ")}`)
+      if (fitted.overflowed) parts.push("protected keys alone exceed the cap and were injected in full")
+      return { body: fitted.text, note: parts.length ? parts.join("; ") : undefined }
+    }
     case "jsonl":
-      return formatJsonl(text, provider.tail)
+      return { body: formatJsonl(text, provider.tail) }
     default:
-      return text.trim()
+      return { body: text.trim() }
   }
 }
 
@@ -319,15 +350,62 @@ export function truncate(text: string, max: number): string {
   return body + "\n… (truncated)"
 }
 
-export type Section = { heading: string; body: string }
+export type Section = { heading: string; body: string; note?: string }
 
-/** Assembles the final context blocks, applying both caps. Never throws. */
-export function buildSections(sections: Section[], cfg: Config): string[] {
+/**
+ * Fits a JSON document to a budget by dropping whole top-level keys, lowest
+ * priority first, instead of slicing the text.
+ *
+ * Character truncation is wrong for JSON twice over. It cuts whatever happens to
+ * be last — which in a session file was the task list, the single most important
+ * thing in it — and it leaves the object syntactically broken, so the model reads
+ * a malformed fragment rather than a smaller valid one.
+ *
+ * Priority is the order of `select`. Keys named in `keep` are never dropped, and
+ * are emitted in full even when they alone exceed the budget: losing them is the
+ * failure this exists to prevent, so overflowing the budget is the lesser harm.
+ * The caller is told what was dropped so it can be logged rather than vanishing.
+ */
+export function fitJson(
+  doc: Record<string, unknown>,
+  order: string[],
+  keep: string[],
+  max: number,
+): { text: string; dropped: string[]; overflowed: boolean } {
+  const keys = order.filter((k) => k in doc)
+  const render = (ks: string[]) => {
+    const picked: Record<string, unknown> = {}
+    for (const k of ks) picked[k] = doc[k]
+    return JSON.stringify(picked, null, 2)
+  }
+
+  let current = [...keys]
+  const dropped: string[] = []
+  while (render(current).length > max) {
+    // Drop the lowest-priority droppable key, i.e. the last one not in `keep`.
+    const i = [...current].reverse().findIndex((k) => !keep.includes(k))
+    if (i === -1) break // only protected keys left
+    const idx = current.length - 1 - i
+    dropped.push(current[idx])
+    current = current.filter((_, n) => n !== idx)
+  }
+  const text = render(current)
+  return { text, dropped, overflowed: text.length > max }
+}
+
+/**
+ * Assembles the final context blocks, applying both caps. Never throws.
+ *
+ * A section marked `fitted` has already been reduced structurally by formatFile
+ * and is passed through untouched: slicing it here would undo the point of that,
+ * cutting the very keys it was told to protect and leaving broken JSON behind.
+ */
+export function buildSections(sections: Array<Section & { fitted?: boolean }>, cfg: Config): string[] {
   const out: string[] = []
   let budget = cfg.maxChars
   for (const s of sections) {
     if (budget <= 0) break
-    const body = truncate(s.body, Math.min(cfg.maxCharsPerProvider, budget))
+    const body = s.fitted ? s.body : truncate(s.body, Math.min(cfg.maxCharsPerProvider, budget))
     if (!body.trim()) continue
     const block = `## ${s.heading}\n\n${body}`
     budget -= block.length

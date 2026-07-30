@@ -61,7 +61,7 @@
 						"items": {
 							"type": "string"
 						},
-						"description": "json only. Top-level keys to keep. Naming them keeps the injection to the state that matters, and keeps out anything the file holds that should not reach a summary."
+						"description": "json only. Top-level keys to keep. The order is also the priority order: when a block must be reduced, the last entries are dropped first. Put what matters most at the front."
 					},
 					"tail": {
 						"type": "integer",
@@ -92,6 +92,13 @@
 							"type": "string"
 						},
 						"description": "json only. Keys removed wherever they appear, at any depth, applied after select. select only reaches the top level, and the weight in a state file is usually nested — a per-item narrative inside an array, say. Measured on one real session file, a single nested key was 91% of the document."
+					},
+					"keep": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "json only. Keys that are never dropped or cut. When the block is over budget the other keys are dropped whole, lowest priority first, and if the protected keys alone still exceed the cap they are injected in full and the overflow is logged. Losing them is the failure this prevents, so overflowing is the lesser harm."
 					}
 				}
 			}

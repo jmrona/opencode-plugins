@@ -97,6 +97,7 @@ And an append-only log, where only the recent entries are worth carrying:
 | `format` | `raw` (default), `json`, or `jsonl`. |
 | `select` | `json` only. Top-level keys to keep — the point is to inject the state, not the whole file. |
 | `omit` | `json` only. Keys removed wherever they appear, at any depth, after `select`. |
+| `keep` | `json` only. Keys that are never dropped or cut, whatever the budget. |
 | `tail` | `jsonl` only. How many trailing lines to keep. Defaults to 10. |
 | `pick` | `newest` (default) or `all`, when a glob matches several files. |
 | `heading` | Markdown heading above this block. Defaults to `name`. |
@@ -110,6 +111,35 @@ conversation summary already covers. Dropping it took that provider from 12,910
 characters to 4,680.
 
 `select` is the field that earns its keep. A ticket-coach session file carries a full design plan that is deliberately never shown to the user; injecting it into a compaction prompt would both waste the budget and leak it into the summary. Naming the keys you want keeps the injection to the part that actually needs to survive.
+
+### Making sure the important part survives
+
+Two caps mean something has to give when a block is too big, and by default what
+gave was whatever happened to be last. On a real session file that was the task
+list — the single most useful thing in it — and because the cut fell mid-string,
+what remained was not even valid JSON.
+
+`json` providers are now reduced **structurally**. `select` order is the priority
+order, and when a block will not fit, whole top-level keys are dropped from the
+end rather than the text being sliced. Keys named in `keep` are never dropped, and
+if they alone exceed the cap they are injected in full and the overflow is logged:
+losing them is the failure this exists to prevent, so going over budget is the
+lesser harm.
+
+```json
+{
+  "name": "ticket-coach session",
+  "format": "json",
+  "select": ["tasks", "current_phase_index", "ticket_id", "phases"],
+  "omit": ["progress", "steps"],
+  "keep": ["tasks", "current_phase_index", "ticket_id"]
+}
+```
+
+Stress-tested against a session three times the budget: all thirty tasks came
+through intact, the output parsed as JSON, and the preview reported which keys had
+been dropped and that the block had overflowed. `raw` and `jsonl` providers have no
+structure to reduce, so those still truncate by character.
 
 ## Two caps, and why
 
