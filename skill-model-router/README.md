@@ -151,3 +151,11 @@ The split between `index.ts` and `lib.ts` is the point: parsing, config merging 
 - **`reasoning_effort` is passed through unvalidated**; values are provider-specific.
 - **Cloud providers are assumed healthy**, having no baseURL to probe. Failures there are still caught by the generation watchdog and per-request errors.
 - **Toast position is fixed** (top-right, hardcoded in opencode's TUI).
+
+## Origin
+
+This plugin grew out of an idea that came up within my team at
+[Future plc](https://www.futureplc.com/) while I was working there. The problem
+it addresses — skills that do not need the session's most capable model, with no
+way to express that in opencode — was first framed in that context, and the work
+started from it.
