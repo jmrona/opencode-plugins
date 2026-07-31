@@ -159,3 +159,9 @@ This plugin grew out of an idea that came up within my team at
 it addresses — skills that do not need the session's most capable model, with no
 way to express that in opencode — was first framed in that context, and the work
 started from it.
+
+## Licence
+
+[MIT](./LICENSE), copyright Jose Romero and Future Publishing Limited. This
+plugin carries its own licence file; the one at the root of the repository covers
+the others.
