@@ -9,8 +9,8 @@
 //
 // It calls the plugin's own readProvider and buildSections rather than
 // reimplementing them, so what it reports cannot drift from what the hook does.
-// Output is plain markdown: it is injected into the conversation directly, so
-// nothing has to relay it.
+// Output is wrapped in markers so the /compaction-preview command can copy each
+// block into a fixed template rather than describing it.
 // Nothing is written and no compaction is triggered.
 
 import { mergeConfig, buildSections, type Section } from "./lib.ts"
@@ -54,24 +54,23 @@ const body = rows.map((r) => [r.name, r.status, r.chars ? String(r.chars) : "-",
 const widths = head.map((h, i) => Math.max(h.length, ...body.map((r) => r[i].length), 3))
 const line = (cells: string[]) => "| " + cells.map((c, i) => c.padEnd(widths[i])).join(" | ") + " |"
 
-console.log("## Providers")
-console.log("")
+console.log("<<<TABLE:PROVIDERS>>>")
 console.log(line(head))
 console.log("|" + widths.map((w) => "-".repeat(w + 2)).join("|") + "|")
 for (const r of body) console.log(line(r))
-console.log("")
+console.log("<<<END:PROVIDERS>>>")
 
 const ok = rows.filter((r) => r.status === "ok" || r.status === "fitted").length
 const truncated = injected.includes("(truncated)")
 const pct = cfg.maxChars ? Math.round((injected.length / cfg.maxChars) * 100) : 0
+console.log("<<<SUMMARY>>>")
 console.log(
   injected.length
     ? `${ok} of ${cfg.providers.length} providers would inject ${injected.length} of ${cfg.maxChars} characters (${pct}%)${truncated ? " - content was truncated at the cap" : ""}.`
     : "Nothing would be injected. Every provider is disabled, or its file is missing.",
 )
-console.log("")
-console.log("## Would be injected")
-console.log("")
-console.log("```")
+console.log("<<<END:SUMMARY>>>")
+
+console.log("<<<INJECTED>>>")
 console.log(injected || "(nothing)")
-console.log("```")
+console.log("<<<END:INJECTED>>>")
